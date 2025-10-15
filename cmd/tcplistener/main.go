@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -9,16 +10,23 @@ import (
 	"strings"
 )
 
-func getLinesFromReader(f io.ReadCloser) <-chan string {
+func getLinesFromChannel(f io.ReadCloser) <-chan string {
 	out := make(chan string, 1)
 
 	go func() {
+		defer close(out)
+		defer f.Close()
 		var current_line strings.Builder
 		for {
 			data := make([]byte, 8)
 			n, err := f.Read(data)
 			if err != nil {
-				break
+				if current_line.Len() != 0 {
+					out <- current_line.String()
+				}
+				if errors.Is(err, io.EOF) {
+					break
+				}
 			}
 
 			data = data[:n]
@@ -31,8 +39,6 @@ func getLinesFromReader(f io.ReadCloser) <-chan string {
 			}
 			current_line.Write(data)
 		}
-		defer close(out)
-		defer f.Close()
 	}()
 	return out
 }
@@ -51,11 +57,9 @@ func main() {
 			fmt.Println(err)
 			os.Exit(1)
 		}
-		fmt.Printf("Connection has been accepted!\n")
-		lines := getLinesFromReader(net)
+		lines := getLinesFromChannel(net)
 		for line := range lines {
 			fmt.Printf("%s\n", line)
 		}
-		fmt.Println("Connection to channel closed")
 	}
 }
