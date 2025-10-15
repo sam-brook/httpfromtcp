@@ -1,35 +1,61 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
+	"io"
+	"net"
 	"os"
 	"strings"
 )
 
+func getLinesFromReader(f io.ReadCloser) <-chan string {
+	out := make(chan string, 1)
+
+	go func() {
+		var current_line strings.Builder
+		for {
+			data := make([]byte, 8)
+			n, err := f.Read(data)
+			if err != nil {
+				break
+			}
+
+			data = data[:n]
+
+			if i := bytes.IndexByte(data, '\n'); i != -1 {
+				current_line.Write(data[:i])
+				out <- current_line.String()
+				current_line.Reset()
+				data = data[i+1:]
+			}
+			current_line.Write(data)
+		}
+		defer close(out)
+		defer f.Close()
+	}()
+	return out
+}
+
 func main() {
-	msg, err := os.Open("./messages.txt")
+	listener, err := net.Listen("tcp", "localhost:42069")
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
 	}
-	defer msg.Close()
-	bytes := make([]byte, 8)
-	var current_line strings.Builder
-	for {
-		_, err = msg.Read(bytes)
-		current_bytes := strings.Split(string(bytes), "\n")
-		if len(current_bytes) != 1 {
-			current_line.WriteString(current_bytes[0])
-			fmt.Printf("read: %s\n", current_line.String())
-			current_line.Reset()
-			current_line.WriteString(current_bytes[1])
-		} else {
-			current_line.WriteString(current_bytes[0])
-		}
-		if err != nil {
-			break
-		}
+	defer listener.Close()
 
+	for {
+		net, err := listener.Accept()
+		if err != nil {
+			fmt.Println(err)
+			os.Exit(1)
+		}
+		fmt.Printf("Connection has been accepted!\n")
+		lines := getLinesFromReader(net)
+		for line := range lines {
+			fmt.Printf("%s\n", line)
+		}
+		fmt.Println("Connection to channel closed")
 	}
-	os.Exit(0)
 }
