@@ -16,12 +16,20 @@ type Request struct {
 	RequestLine RequestLine
 	Headers     map[string]string
 	Body        []byte
+	State       State
 }
+
+type State int
+
+const (
+	initialised State = iota
+	done
+)
 
 func getHttpVersion(s string) string {
 	splitVersionStr := strings.Split(s, "/")
-	if len(splitVersionStr) != 2 {
-		return ""
+	if len(splitVersionStr) != 2 || splitVersionStr[0] != "HTTP" {
+		return s
 	}
 	return splitVersionStr[1]
 }
@@ -55,7 +63,7 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 	return result, nil
 }
 
-func parseRequestLine(s string) (*RequestLine, error) {
+func parseRequestLine(s string) (*RequestLine, int, error) {
 	lines := strings.Split(s, "\r\n")
 	requestLine := lines[0]
 	splitRequestLine := strings.Split(requestLine, " ")
