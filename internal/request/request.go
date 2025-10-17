@@ -50,8 +50,9 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 	}
 
 	s := string(b)
-	rqLine, err := parseRequestLine(s)
+	rqLine, state, err := parseRequestLine(s)
 	if err != nil {
+		if state == 
 		return &Request{}, fmt.Errorf("Error parsing request line: %v\n\t%s", err, b)
 	}
 
@@ -65,20 +66,23 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 
 func parseRequestLine(s string) (*RequestLine, int, error) {
 	lines := strings.Split(s, "\r\n")
+	if len(lines) == 0 {
+		return &RequestLine{}, int(initialised), nil
+	}
 	requestLine := lines[0]
 	splitRequestLine := strings.Split(requestLine, " ")
 
 	method := splitRequestLine[0]
 	fmt.Printf("\n")
 	if !isUpperAlphabetic(method) {
-		return &RequestLine{}, fmt.Errorf("Non capital letter found in:\nMethod Name: %s\nRequest Line: %s", method, requestLine)
+		return &RequestLine{}, int(done), fmt.Errorf("Non capital letter found in:\nMethod Name: %s\nRequest Line: %s", method, requestLine)
 	}
 
 	requestTarget := splitRequestLine[1]
 
 	version := getHttpVersion(splitRequestLine[2])
 	if version != "1.1" {
-		return &RequestLine{}, fmt.Errorf("We do not currently support HTTP versions other than 1.1 %s", version)
+		return &RequestLine{}, int(done), fmt.Errorf("We do not currently support HTTP versions other than 1.1 %s", version)
 	}
 
 	result := &RequestLine{
@@ -86,5 +90,5 @@ func parseRequestLine(s string) (*RequestLine, int, error) {
 		RequestTarget: requestTarget,
 		HttpVersion:   version,
 	}
-	return result, nil
+	return result,int(done), nil
 }
