@@ -1,9 +1,9 @@
 package request
 
 import (
+	"bytes"
 	"fmt"
 	"io"
-	"strings"
 )
 
 type RequestLine struct {
@@ -26,16 +26,16 @@ const (
 	done
 )
 
-func getHttpVersion(s string) string {
-	splitVersionStr := strings.Split(s, "/")
-	if len(splitVersionStr) != 2 || splitVersionStr[0] != "HTTP" {
-		return s
+func getHttpVersion(b []byte) []byte {
+	version_parts := bytes.Split(b, []byte("/"))
+	if !bytes.Equal(version_parts[0], []byte("HTTP")) || len(version_parts) != 2 {
+		return []byte{}
 	}
-	return splitVersionStr[1]
+	return version_parts[1]
 }
 
-func isUpperAlphabetic(s string) bool {
-	for _, c := range s {
+func isUpperAlphabetic(b []byte) bool {
+	for _, c := range b {
 		if c < 65 || c > 90 {
 			return false
 		}
@@ -44,59 +44,91 @@ func isUpperAlphabetic(s string) bool {
 }
 
 func (r *Request) parse(data []byte) (int, error) {
-	if r.State == initialised {
+	read := 0
+outer:
+	for {
+		switch r.State {
+		case initialised:
+			rl, n, err := parseRequestLine(data[read:])
+			if err != nil {
+				r.State = done
+				return 0, err
+			}
+			if n == 0 {
+				break outer
+			}
 
-	} else if r.State == done {
+			r.RequestLine = *rl
+			read += n
+			r.State = done
+		case done:
+			break outer
+		}
+	}
+	return read, nil
+}
 
+func newRequest() *Request {
+	return &Request{
+		State: initialised,
 	}
 }
 
 func RequestFromReader(reader io.Reader) (*Request, error) {
-	b, err := io.ReadAll(reader)
-	if err != nil {
-		return &Request{}, fmt.Errorf("Error reading data: %v\n\t%s", err, b)
-	}
+	request := newRequest()
+	buf := make([]byte, 1024)
+	bufIdx := 0
 
-	s := string(b)
-	rqLine, state, err := parseRequestLine(s)
-	if err != nil {
-		if state == 
-		return &Request{}, fmt.Errorf("Error parsing request line: %v\n\t%s", err, b)
-	}
+	for request.State != done {
+		n, err := reader.Read(buf[bufIdx:])
+		if err != nil {
+			return nil, err
+		}
 
-	result := &Request{
-		RequestLine: *rqLine,
-		Headers:     make(map[string]string),
-		Body:        []byte(""),
+		bufIdx += n
+		readN, err := request.parse(buf[:bufIdx+n])
+		if err != nil {
+			return nil, err
+		}
+		copy(buf, buf[readN:bufIdx])
+		bufIdx -= readN
 	}
-	return result, nil
+	return request, nil
 }
 
-func parseRequestLine(s string) (*RequestLine, int, error) {
-	lines := strings.Split(s, "\r\n")
-	if len(lines) == 0 {
-		return &RequestLine{}, int(initialised), nil
-	}
-	requestLine := lines[0]
-	splitRequestLine := strings.Split(requestLine, " ")
+var ERROR_MALFORMED_REQ_LINE = fmt.Errorf("Malformed request line")
+var SEPARATOR = []byte("\r\n")
 
-	method := splitRequestLine[0]
-	fmt.Printf("\n")
+func parseRequestLine(b []byte) (*RequestLine, int, error) {
+	index := bytes.Index(b, SEPARATOR)
+	if index == -1 {
+		return nil, 0, nil
+	}
+	requestLine := b[:index]
+	read := index + len(SEPARATOR)
+	parts := bytes.Split(requestLine, []byte(" "))
+
+	if len(parts) != 3 {
+		return nil, 0, ERROR_MALFORMED_REQ_LINE
+	}
+
+	method := parts[0]
 	if !isUpperAlphabetic(method) {
-		return &RequestLine{}, int(done), fmt.Errorf("Non capital letter found in:\nMethod Name: %s\nRequest Line: %s", method, requestLine)
+		return nil, 0, fmt.Errorf("Non capital letter found in:\nMethod Name: %s\nRequest Line: %s", method, requestLine)
 	}
 
-	requestTarget := splitRequestLine[1]
+	requestTarget := parts[1]
 
-	version := getHttpVersion(splitRequestLine[2])
-	if version != "1.1" {
-		return &RequestLine{}, int(done), fmt.Errorf("We do not currently support HTTP versions other than 1.1 %s", version)
+	version := getHttpVersion(parts[2])
+	if !bytes.Equal(version, []byte("1.1")) {
+		fmt.Printf("%s", version)
+		return nil, 0, fmt.Errorf("We do not currently support HTTP versions other than 1.1: %s", version)
 	}
 
 	result := &RequestLine{
-		Method:        method,
-		RequestTarget: requestTarget,
-		HttpVersion:   version,
+		Method:        string(method),
+		RequestTarget: string(requestTarget),
+		HttpVersion:   string(version),
 	}
-	return result,int(done), nil
+	return result, read, nil
 }
