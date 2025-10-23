@@ -43,6 +43,14 @@ func isUpperAlphabetic(s string) bool {
 	return true
 }
 
+func (r *Request) parse(data []byte) (int, error) {
+	if r.State == initialised {
+
+	} else if r.State == done {
+
+	}
+}
+
 func RequestFromReader(reader io.Reader) (*Request, error) {
 	b, err := io.ReadAll(reader)
 	if err != nil {
